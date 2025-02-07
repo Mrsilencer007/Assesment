@@ -1,0 +1,131 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using FluentValidation;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Microsoft.OpenApi.Models;
+
+public class TodoItem
+{
+    public int Id { get; set; } 
+    public string Title { get; set; } = string.Empty; 
+    public bool IsCompleted { get; set; } 
+}
+
+// Infrastructure - DbContext
+public class TodoDbContext : DbContext
+{
+    public TodoDbContext(DbContextOptions<TodoDbContext> options) : base(options) { }
+    public DbSet<TodoItem> Todos { get; set; }  // Database set for storing to-do items
+}
+
+// Application - Validation
+public class TodoValidator : AbstractValidator<TodoItem>
+{
+    public TodoValidator()
+    {
+        RuleFor(x => x.Title).NotEmpty().WithMessage("Title cannot be empty"); 
+    }
+}
+
+
+// API - Controller
+[Route("api/todos")]
+[ApiController]
+public class TodoController : ControllerBase
+{
+    private readonly TodoDbContext _context;
+    private readonly IValidator<TodoItem> _validator;
+
+    public TodoController(TodoDbContext context, IValidator<TodoItem> validator)
+    {
+        _context = context;
+        _validator = validator;
+    }
+
+    // Get all to-do items
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodos()
+    {
+        return Ok(await _context.Todos.ToListAsync());
+    }
+
+    // Get a specific to-do item by ID
+    [HttpGet("{id}")]
+    public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
+    {
+        var item = await _context.Todos.FindAsync(id);
+        if (item == null) return NotFound();
+        return Ok(item);
+    }
+
+
+    // Create a new to-do item
+    [HttpPost]
+    public async Task<ActionResult<TodoItem>> CreateTodoItem([FromBody] TodoItem item)
+    {
+        var validationResult = await _validator.ValidateAsync(item);
+        if (!validationResult.IsValid)
+            return BadRequest(validationResult.Errors);
+
+        _context.Todos.Add(item);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetTodoItem), new { id = item.Id }, item);
+    }
+
+    // Update an existing to-do item
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateTodoItem(int id, [FromBody] TodoItem item)
+    {
+        if (id != item.Id) return BadRequest("ID mismatch"); // Ensure the ID in the URL matches the request body
+        var existingItem = await _context.Todos.FindAsync(id);
+        if (existingItem == null) return NotFound();
+
+        existingItem.Title = item.Title;
+        existingItem.IsCompleted = item.IsCompleted;
+
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Delete a to-do item
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteTodoItem(int id)
+    {
+        var item = await _context.Todos.FindAsync(id);
+        if (item == null) return NotFound();
+
+        _context.Todos.Remove(item);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+}
+
+// Program.cs - Application startup
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services
+builder.Services.AddDbContext<TodoDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddScoped<IValidator<TodoItem>, TodoValidator>();
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Todo API", Version = "v1" });
+});
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+

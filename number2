@@ -1,0 +1,76 @@
+import { useEffect, useState } from "react";
+
+const API_URL = "https://localhost:5001/api/todos";
+
+export default function TodoApp() {
+    const [todos, setTodos] = useState([]); // State to store the list of to-do items
+    const [newTodo, setNewTodo] = useState(""); // State to store new to-do input
+
+    // Fetch to-do items when the component mounts
+    useEffect(() => {
+        fetchTodos();
+    }, []);
+
+    // Fetch all to-dos from the API
+    const fetchTodos = async () => {
+        const response = await fetch(API_URL);
+        const data = await response.json();
+        setTodos(data); // Update state with fetched to-dos
+    };
+
+    // Add a new to-do item
+    const addTodo = async () => {
+        if (!newTodo.trim()) return; // Prevent empty to-dos
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: newTodo, isCompleted: false })
+        });
+        if (response.ok) {
+            fetchTodos(); // Refresh the list after adding
+            setNewTodo(""); // Clear input field
+        }
+    };
+
+    // Toggle the completion status of a to-do item
+    const toggleComplete = async (id, isCompleted) => {
+        await fetch(`${API_URL}/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, title: todos.find(t => t.id === id).title, isCompleted: !isCompleted })
+        });
+        fetchTodos(); // Refresh the list after updating
+    };
+
+    // Delete a to-do item
+    const deleteTodo = async (id) => {
+        await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+        fetchTodos(); // Refresh the list after deleting
+    };
+
+    return (
+        <div className="container">
+            <h1>To-Do List</h1>
+            <input
+                type="text"
+                placeholder="New task..."
+                value={newTodo}
+                onChange={(e) => setNewTodo(e.target.value)}
+            />
+            <button onClick={addTodo}>Add</button>
+            <ul>
+                {todos.map(todo => (
+                    <li key={todo.id}>
+                        <span style={{ textDecoration: todo.isCompleted ? "line-through" : "none" }}>
+                            {todo.title}
+                        </span>
+                        <button onClick={() => toggleComplete(todo.id, todo.isCompleted)}>
+                            {todo.isCompleted ? "Undo" : "Complete"}
+                        </button>
+                        <button onClick={() => deleteTodo(todo.id)}>Delete</button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
